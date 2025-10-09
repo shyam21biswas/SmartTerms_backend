@@ -67,7 +67,7 @@ except ImportError:
 class Config:
     # IMPORTANT: Best practice is to use environment variables for secrets.
     # Your Kotlin app doesn't need this, only the server.
-    GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "AIzaSyADyW2JrV62pxL2w-wj7M0oi6ps-7fflFY")
+    GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
     EMBEDDING_MODEL = "all-mpnet-base-v2"
     MIN_CHUNK_SENTENCES = 3
     MAX_CHUNK_SENTENCES = 8
