@@ -1,0 +1,12 @@
+fastapi
+uvicorn
+gunicorn
+sentence-transformers
+beautifulsoup4
+requests
+rank_bm25
+nltk
+undetected-chromedriver
+selenium
+google-generativeai
+numpy
