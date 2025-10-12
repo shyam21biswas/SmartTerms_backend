@@ -1,12 +1,25 @@
-fastapi
-uvicorn
-gunicorn
-sentence-transformers
-beautifulsoup4
-requests
-rank_bm25
-nltk
-undetected-chromedriver
-selenium
-google-generativeai
-numpy
+# SmartTerms FastAPI - Memory Optimized Requirements
+
+# FastAPI Framework
+fastapi==0.109.0
+uvicorn[standard]==0.27.0
+pydantic==2.5.3
+
+# Core Dependencies
+requests==2.31.0
+beautifulsoup4==4.12.2
+lxml==4.9.3
+
+# AI/ML - MEMORY OPTIMIZED
+google-generativeai==0.3.2
+sentence-transformers==2.2.2
+numpy==1.24.3
+
+# Search
+rank-bm25==0.2.2
+
+# NLP
+nltk==3.8.1
+
+# Optional
+python-dotenv==1.0.0
