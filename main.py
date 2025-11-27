@@ -1,6 +1,6 @@
 """
-SmartTerms FastAPI - Ultra Lightweight (No ML Models)
-Memory optimized for 512MB RAM - Keyword search only
+SmartTerms FastAPI - OPTIMIZED for Gemini API Rate Limits
+Only 1 Gemini call per analyze, 1 per query (total: 2 calls max per session)
 """
 
 import os
@@ -49,8 +49,8 @@ class Config:
     MIN_CHUNK_SENTENCES = 2
     MAX_CHUNK_SENTENCES = 6
     SENTENCE_OVERLAP = 1
-    TOP_K_RESULTS = 3
-    RELEVANCE_THRESHOLD = 0.1  # Lower threshold for keyword-only search
+    TOP_K_RESULTS = 5  # Increased for better context
+    RELEVANCE_THRESHOLD = 0.1
 
 
 # Web Scraper
@@ -129,12 +129,10 @@ class SemanticChunker:
         return chunks
 
 
-# Keyword-Only Vector Store (No ML Models)
+# Keyword-Only Vector Store
 class KeywordVectorStore:
-    """Lightweight keyword search - no embeddings needed"""
-
     def __init__(self):
-        print("🔍 Initializing keyword search (no ML models)...")
+        print("🔍 Initializing keyword search...")
         self.chunks = []
         self.bm25 = None
         print("✅ Search ready")
@@ -160,11 +158,9 @@ class KeywordVectorStore:
         tokenized_query = query.lower().split()
         scores = self.bm25.get_scores(tokenized_query)
         
-        # Normalize scores
         max_score = max(scores) if max(scores) > 0 else 1
         normalized_scores = scores / max_score
 
-        # Get top results
         top_indices = sorted(range(len(scores)), key=lambda i: scores[i], reverse=True)[:Config.TOP_K_RESULTS]
 
         results = []
@@ -178,28 +174,50 @@ class KeywordVectorStore:
         return results
 
 
-# Gemini LLM
+# Gemini LLM - OPTIMIZED
 class GeminiLLM:
     def __init__(self, api_key: str):
         print("🤖 Initializing Gemini API...")
         genai.configure(api_key=api_key)
         self.model = genai.GenerativeModel('gemini-2.0-flash-exp')
+        self.call_count = 0  # Track API calls
         print("✅ Gemini ready")
 
     def generate_summary(self, content: str, title: str) -> str:
-        prompt = f"""Summarize this document in simple language:
+        """ONLY 1 GEMINI CALL - for summary generation"""
+        self.call_count += 1
+        print(f"🔥 Gemini API Call #{self.call_count} - Generating summary")
+        
+        prompt = f"""Analyze this Terms & Conditions document and create a comprehensive summary.
 
 Title: {title}
-Content: {content[:3000]}
+Content: {content[:5000]}
 
-Format:
-🎯 Quick Overview (2-3 sentences)
-📋 Key Points (5-7 bullets with emojis)
-👤 User Obligations
-🚫 Restrictions
-⚠️ Important Info
+Provide a detailed summary in this exact format:
 
-Keep it simple and scannable."""
+🎯 QUICK OVERVIEW
+[2-3 sentences explaining what this document covers]
+
+📋 KEY POINTS
+• [Important point 1]
+• [Important point 2]
+• [Important point 3]
+• [Important point 4]
+• [Important point 5]
+
+👤 YOUR OBLIGATIONS
+• [What you must do]
+• [What you agree to]
+
+🚫 RESTRICTIONS
+• [What you cannot do]
+• [Limitations on service]
+
+⚠️ IMPORTANT NOTICES
+• [Critical information]
+• [Things to watch out for]
+
+Keep it clear and actionable."""
 
         try:
             response = self.model.generate_content(prompt)
@@ -207,17 +225,22 @@ Keep it simple and scannable."""
         except Exception as e:
             return f"Error generating summary: {str(e)}"
 
-    def answer_question(self, question: str, chunks: List[Dict]) -> str:
-        context = "\n\n".join([f"[{c['title']}]\n{c['text']}" for c in chunks])
+    def answer_question(self, question: str, chunks: List[Dict], cached_summary: str = None) -> str:
+        """ONLY 1 GEMINI CALL - for answering questions"""
+        self.call_count += 1
+        print(f"🔥 Gemini API Call #{self.call_count} - Answering question")
+        
+        # Use more context from chunks
+        context = "\n\n".join([f"Section {i+1}:\n{c['text']}" for i, c in enumerate(chunks)])
 
-        prompt = f"""Answer based ONLY on the context below.
+        prompt = f"""You are analyzing a Terms & Conditions document. Answer the user's question based ONLY on the provided context.
 
-Context:
-{context}
+Context from document:
+{context[:4000]}
 
-Question: {question}
+User's Question: {question}
 
-Provide a clear, concise answer."""
+Provide a clear, direct answer. If the information is not in the context, say so. Be specific and cite relevant parts."""
 
         try:
             response = self.model.generate_content(prompt)
@@ -225,26 +248,12 @@ Provide a clear, concise answer."""
         except Exception as e:
             return f"Error: {str(e)}"
 
-    def classify_relevance(self, query: str, doc_title: str) -> bool:
-        common_terms = ['data', 'privacy', 'refund', 'cancel', 'payment', 'terms',
-                        'policy', 'account', 'rights', 'liability', 'warranty']
-        query_lower = query.lower()
-
-        if any(term in query_lower for term in common_terms):
-            return True
-
-        off_topic = ['weather', 'sports', 'recipe', 'capital', 'who is']
-        if any(term in query_lower for term in off_topic):
-            return False
-
-        return True
-
 
 # RAG System
 class RAGSystem:
     def __init__(self, api_key: str):
         print("\n" + "=" * 70)
-        print("🚀 Initializing SmartTerms RAG System (Lightweight)")
+        print("🚀 Initializing SmartTerms RAG System (API Optimized)")
         print("=" * 70 + "\n")
 
         self.scraper = SimpleWebScraper()
@@ -256,6 +265,7 @@ class RAGSystem:
         print("\n✅ RAG System Ready\n")
 
     def analyze_url(self, url: str) -> Dict:
+        """Scrape and analyze - ONLY 1 GEMINI CALL"""
         print(f"\n{'=' * 70}")
         print(f"📄 Analyzing: {url}")
         print(f"{'=' * 70}\n")
@@ -294,16 +304,20 @@ class RAGSystem:
         )
         self.documents["summary"] = summary
 
-        print(f"\n✅ Analysis complete! Chunks: {len(all_chunks)}\n")
+        print(f"\n✅ Analysis complete!")
+        print(f"📊 Total Gemini API calls for this analysis: 1")
+        print(f"📦 Chunks created: {len(all_chunks)}\n")
 
         return {
             "message": "Analysis successful",
             "documents_scraped": len(scraped_docs),
             "chunks_created": len(all_chunks),
-            "summary": summary
+            "summary": summary,
+            "api_calls_used": 1
         }
 
     def query(self, question: str) -> Dict:
+        """Query document - ONLY 1 GEMINI CALL (or 0 if returning cached summary)"""
         if not self.documents:
             raise HTTPException(
                 status_code=400,
@@ -311,28 +325,31 @@ class RAGSystem:
             )
 
         question_lower = question.lower().strip()
-        if any(kw in question_lower for kw in ['summary', 'summarize', 'overview', 'tldr']):
+        
+        # NO GEMINI CALL - Return cached summary
+        if any(kw in question_lower for kw in ['summary', 'summarize', 'overview', 'tldr', 'sum']):
+            print("💾 Returning cached summary (0 API calls)")
             return {
                 "answer": self.documents.get("summary", "No summary available"),
-                "sources": []
+                "sources": [],
+                "api_calls_used": 0
             }
 
-        if not self.llm.classify_relevance(question, self.documents.get("main_title", "")):
-            return {
-                "answer": "❌ This question doesn't seem relevant to the document.\n\n💡 Try: 'summary', 'what data is collected', 'refund policy', etc.",
-                "sources": []
-            }
-
+        # Search for relevant chunks (NO GEMINI CALL)
         results = self.vector_store.search(question)
 
         if not results:
+            # NO GEMINI CALL - Simple response
+            print("❌ No relevant chunks found (0 API calls)")
             return {
-                "answer": "❌ No relevant information found in the document.\n\n💡 Try asking for a 'summary' first.",
-                "sources": []
+                "answer": "I couldn't find relevant information about that in the document. Try asking for a 'summary' to see what topics are covered.",
+                "sources": [],
+                "api_calls_used": 0
             }
 
-        print(f"💬 Answering: {question}")
-        answer = self.llm.answer_question(question, results)
+        # ONLY 1 GEMINI CALL - For answering
+        print(f"💬 Answering question with {len(results)} relevant chunks")
+        answer = self.llm.answer_question(question, results, self.documents.get("summary"))
 
         sources = [
             {
@@ -343,9 +360,12 @@ class RAGSystem:
             for r in results
         ]
 
+        print(f"📊 API calls used for this query: 1\n")
+
         return {
             "answer": answer,
-            "sources": sources
+            "sources": sources,
+            "api_calls_used": 1
         }
 
     def cleanup(self):
@@ -363,6 +383,7 @@ class AnalyzeResponse(BaseModel):
     documents_scraped: int
     chunks_created: int
     summary: str
+    api_calls_used: int = Field(default=1, description="Number of Gemini API calls")
 
 
 class QueryRequest(BaseModel):
@@ -378,6 +399,7 @@ class Source(BaseModel):
 class QueryResponse(BaseModel):
     answer: str
     sources: List[Source]
+    api_calls_used: int = Field(default=1, description="Number of Gemini API calls")
 
 
 class HealthResponse(BaseModel):
@@ -388,8 +410,8 @@ class HealthResponse(BaseModel):
 # FastAPI App
 app = FastAPI(
     title="SmartTerms API",
-    description="AI-powered Terms & Conditions analyzer (Lightweight)",
-    version="1.0.0"
+    description="AI-powered T&C analyzer - Optimized for API limits",
+    version="2.0.0"
 )
 
 app.add_middleware(
@@ -425,7 +447,7 @@ async def shutdown_event():
 def root():
     return {
         "status": "online",
-        "message": "SmartTerms API is running. Visit /docs for API documentation."
+        "message": "SmartTerms API v2.0 - Optimized for API limits"
     }
 
 
