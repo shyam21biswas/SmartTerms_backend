@@ -1,5 +1,6 @@
 """
-SmartTerms FastAPI - Optimized for Render Deployment
+SmartTerms FastAPI - Ultra Lightweight (No ML Models)
+Memory optimized for 512MB RAM - Keyword search only
 """
 
 import os
@@ -10,26 +11,21 @@ from datetime import datetime
 from typing import List, Dict, Optional
 
 import google.generativeai as genai
-import numpy as np
 import requests
-import uvicorn
 from bs4 import BeautifulSoup
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
-from sentence_transformers import SentenceTransformer
+import uvicorn
 
-# Aggressive memory management
+# Memory management
 gc.set_threshold(700, 10, 10)
 warnings.filterwarnings('ignore')
 
-# ==============================================================================
-# INSTALL DEPENDENCIES
-# ==============================================================================
+# Install dependencies
 try:
     from rank_bm25 import BM25Okapi
     import nltk
-
     try:
         nltk.data.find('tokenizers/punkt')
     except LookupError:
@@ -38,7 +34,7 @@ try:
         nltk.download('punkt_tab', quiet=True)
     from nltk.tokenize import sent_tokenize
 except ImportError:
-    print("⚠️ Installing rank_bm25 and nltk...")
+    print("⚠️ Installing dependencies...")
     os.system(f'{sys.executable} -m pip install rank-bm25 nltk')
     from rank_bm25 import BM25Okapi
     import nltk
@@ -47,42 +43,18 @@ except ImportError:
     from nltk.tokenize import sent_tokenize
 
 
-# ==============================================================================
-# CONFIGURATION
-# ==============================================================================
+# Configuration
 class Config:
-    # IMPORTANT: Get API key from environment variable (Render secret)
     GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
-    
-    # MEMORY OPTIMIZATION: Use smaller embedding model
-    EMBEDDING_MODEL = "all-MiniLM-L6-v2"  # 80MB instead of 420MB
-
-    # Chunking settings
     MIN_CHUNK_SENTENCES = 2
     MAX_CHUNK_SENTENCES = 6
     SENTENCE_OVERLAP = 1
-
-    # Search settings
-    SEMANTIC_WEIGHT = 0.7
-    BM25_WEIGHT = 0.3
     TOP_K_RESULTS = 3
-    RELEVANCE_THRESHOLD = 0.3
-
-    # Crawling limits
-    MAX_DEPTH = 0
-    MAX_PAGES = 1
-
-    # Selenium DISABLED for memory savings
-    USE_SELENIUM = False
-    PAGE_LOAD_TIMEOUT = 15
+    RELEVANCE_THRESHOLD = 0.1  # Lower threshold for keyword-only search
 
 
-# ==============================================================================
-# SIMPLE WEB SCRAPER
-# ==============================================================================
+# Web Scraper
 class SimpleWebScraper:
-    """Lightweight scraper without Selenium"""
-
     def __init__(self):
         self.session = requests.Session()
         self.headers = {
@@ -92,15 +64,12 @@ class SimpleWebScraper:
         }
 
     def scrape_page(self, url: str) -> Optional[Dict]:
-        """Scrape single page with requests"""
         try:
             print(f"  📄 Scraping: {url[:70]}...")
             response = self.session.get(url, headers=self.headers, timeout=15, allow_redirects=True)
             response.raise_for_status()
 
             soup = BeautifulSoup(response.content, 'html.parser')
-
-            # Remove unwanted elements
             for element in soup(['script', 'style', 'nav', 'footer', 'header', 'aside']):
                 element.decompose()
 
@@ -125,25 +94,18 @@ class SimpleWebScraper:
             return None
 
     def scrape(self, url: str) -> List[Dict]:
-        """Scrape URL (single page only for memory efficiency)"""
         print(f"\n🌐 Scraping URL: {url}")
         result = self.scrape_page(url)
-        if result:
-            return [result]
-        return []
+        return [result] if result else []
 
     def cleanup(self):
-        """Cleanup session"""
         self.session.close()
 
 
-# ==============================================================================
-# SEMANTIC CHUNKER
-# ==============================================================================
+# Semantic Chunker
 class SemanticChunker:
     @staticmethod
     def chunk_by_sentences(text: str, metadata: Dict) -> List[Dict]:
-        """Chunk text by sentences"""
         sentences = sent_tokenize(text)
         if not sentences:
             return []
@@ -154,7 +116,6 @@ class SemanticChunker:
 
         while i < len(sentences):
             chunk_sentences = sentences[i:i + Config.MAX_CHUNK_SENTENCES]
-
             if len(chunk_sentences) >= Config.MIN_CHUNK_SENTENCES:
                 chunk_text = ' '.join(chunk_sentences).strip()
                 chunks.append({
@@ -163,29 +124,22 @@ class SemanticChunker:
                     **metadata
                 })
                 chunk_index += 1
-
             i += Config.MAX_CHUNK_SENTENCES - Config.SENTENCE_OVERLAP
 
         return chunks
 
 
-# ==============================================================================
-# HYBRID VECTOR STORE
-# ==============================================================================
-class HybridVectorStore:
-    """Hybrid search with semantic + keyword matching"""
+# Keyword-Only Vector Store (No ML Models)
+class KeywordVectorStore:
+    """Lightweight keyword search - no embeddings needed"""
 
     def __init__(self):
-        print(f"🧠 Loading embedding model: {Config.EMBEDDING_MODEL}...")
-        self.model = SentenceTransformer(Config.EMBEDDING_MODEL)
+        print("🔍 Initializing keyword search (no ML models)...")
         self.chunks = []
-        self.embeddings = None
         self.bm25 = None
-        gc.collect()
-        print("✅ Model loaded")
+        print("✅ Search ready")
 
     def add_chunks(self, chunks: List[Dict]):
-        """Add and index chunks"""
         if not chunks:
             return
 
@@ -193,14 +147,6 @@ class HybridVectorStore:
         self.chunks.extend(chunks)
 
         texts = [c['text'] for c in chunks]
-        new_embeddings = self.model.encode(texts, show_progress_bar=False)
-
-        if self.embeddings is None:
-            self.embeddings = new_embeddings
-        else:
-            self.embeddings = np.vstack([self.embeddings, new_embeddings])
-
-        # BM25 index
         tokenized = [text.lower().split() for text in texts]
         self.bm25 = BM25Okapi(tokenized)
 
@@ -208,39 +154,31 @@ class HybridVectorStore:
         print(f"✅ Indexed {len(self.chunks)} total chunks")
 
     def search(self, query: str) -> List[Dict]:
-        """Hybrid search"""
-        if not self.chunks or self.embeddings is None:
+        if not self.chunks or self.bm25 is None:
             return []
 
-        # Semantic search
-        query_embedding = self.model.encode([query])[0]
-        sem_scores = np.dot(self.embeddings, query_embedding) / (
-                np.linalg.norm(self.embeddings, axis=1) * np.linalg.norm(query_embedding)
-        )
-
-        # BM25 search
         tokenized_query = query.lower().split()
-        bm25_scores = self.bm25.get_scores(tokenized_query)
-        bm25_norm = bm25_scores / (max(bm25_scores) if max(bm25_scores) > 0 else 1)
+        scores = self.bm25.get_scores(tokenized_query)
+        
+        # Normalize scores
+        max_score = max(scores) if max(scores) > 0 else 1
+        normalized_scores = scores / max_score
 
-        # Combine scores
-        combined = sem_scores * Config.SEMANTIC_WEIGHT + bm25_norm * Config.BM25_WEIGHT
-        top_indices = np.argsort(combined)[-Config.TOP_K_RESULTS:][::-1]
+        # Get top results
+        top_indices = sorted(range(len(scores)), key=lambda i: scores[i], reverse=True)[:Config.TOP_K_RESULTS]
 
         results = []
         for idx in top_indices:
-            if combined[idx] >= Config.RELEVANCE_THRESHOLD:
+            if normalized_scores[idx] >= Config.RELEVANCE_THRESHOLD:
                 results.append({
                     **self.chunks[idx],
-                    'score': float(combined[idx])
+                    'score': float(normalized_scores[idx])
                 })
 
         return results
 
 
-# ==============================================================================
-# GEMINI LLM HANDLER
-# ==============================================================================
+# Gemini LLM
 class GeminiLLM:
     def __init__(self, api_key: str):
         print("🤖 Initializing Gemini API...")
@@ -249,7 +187,6 @@ class GeminiLLM:
         print("✅ Gemini ready")
 
     def generate_summary(self, content: str, title: str) -> str:
-        """Generate document summary"""
         prompt = f"""Summarize this document in simple language:
 
 Title: {title}
@@ -271,7 +208,6 @@ Keep it simple and scannable."""
             return f"Error generating summary: {str(e)}"
 
     def answer_question(self, question: str, chunks: List[Dict]) -> str:
-        """Answer question based on chunks"""
         context = "\n\n".join([f"[{c['title']}]\n{c['text']}" for c in chunks])
 
         prompt = f"""Answer based ONLY on the context below.
@@ -290,7 +226,6 @@ Provide a clear, concise answer."""
             return f"Error: {str(e)}"
 
     def classify_relevance(self, query: str, doc_title: str) -> bool:
-        """Check if query is relevant"""
         common_terms = ['data', 'privacy', 'refund', 'cancel', 'payment', 'terms',
                         'policy', 'account', 'rights', 'liability', 'warranty']
         query_lower = query.lower()
@@ -305,37 +240,30 @@ Provide a clear, concise answer."""
         return True
 
 
-# ==============================================================================
-# MAIN RAG SYSTEM
-# ==============================================================================
+# RAG System
 class RAGSystem:
-    """Main RAG orchestration"""
-
     def __init__(self, api_key: str):
         print("\n" + "=" * 70)
-        print("🚀 Initializing SmartTerms RAG System")
+        print("🚀 Initializing SmartTerms RAG System (Lightweight)")
         print("=" * 70 + "\n")
 
         self.scraper = SimpleWebScraper()
         self.chunker = SemanticChunker()
-        self.vector_store = HybridVectorStore()
+        self.vector_store = KeywordVectorStore()
         self.llm = GeminiLLM(api_key)
         self.documents = {}
 
         print("\n✅ RAG System Ready\n")
 
     def analyze_url(self, url: str) -> Dict:
-        """Scrape and analyze URL"""
         print(f"\n{'=' * 70}")
         print(f"📄 Analyzing: {url}")
         print(f"{'=' * 70}\n")
 
-        # Reset for new analysis
-        self.vector_store = HybridVectorStore()
+        self.vector_store = KeywordVectorStore()
         self.documents = {}
         gc.collect()
 
-        # Scrape
         scraped_docs = self.scraper.scrape(url)
 
         if not scraped_docs:
@@ -344,7 +272,6 @@ class RAGSystem:
                 detail="Failed to scrape URL. Website may be blocking requests or URL is invalid."
             )
 
-        # Process documents
         all_chunks = []
         for doc in scraped_docs:
             metadata = {
@@ -358,10 +285,8 @@ class RAGSystem:
             self.documents["main_title"] = doc["title"]
             self.documents["main_content"] = doc["content"]
 
-        # Index chunks
         self.vector_store.add_chunks(all_chunks)
 
-        # Generate summary
         print("\n📝 Generating summary...")
         summary = self.llm.generate_summary(
             self.documents["main_content"],
@@ -379,14 +304,12 @@ class RAGSystem:
         }
 
     def query(self, question: str) -> Dict:
-        """Query the analyzed document"""
         if not self.documents:
             raise HTTPException(
                 status_code=400,
                 detail="No document analyzed yet. Call /analyze first."
             )
 
-        # Check for summary request
         question_lower = question.lower().strip()
         if any(kw in question_lower for kw in ['summary', 'summarize', 'overview', 'tldr']):
             return {
@@ -394,14 +317,12 @@ class RAGSystem:
                 "sources": []
             }
 
-        # Check relevance
         if not self.llm.classify_relevance(question, self.documents.get("main_title", "")):
             return {
                 "answer": "❌ This question doesn't seem relevant to the document.\n\n💡 Try: 'summary', 'what data is collected', 'refund policy', etc.",
                 "sources": []
             }
 
-        # Search for relevant chunks
         results = self.vector_store.search(question)
 
         if not results:
@@ -410,7 +331,6 @@ class RAGSystem:
                 "sources": []
             }
 
-        # Generate answer
         print(f"💬 Answering: {question}")
         answer = self.llm.answer_question(question, results)
 
@@ -429,14 +349,9 @@ class RAGSystem:
         }
 
     def cleanup(self):
-        """Cleanup resources"""
         self.scraper.cleanup()
         gc.collect()
 
-
-# ==============================================================================
-# FASTAPI APPLICATION
-# ==============================================================================
 
 # Pydantic Models
 class AnalyzeRequest(BaseModel):
@@ -473,31 +388,27 @@ class HealthResponse(BaseModel):
 # FastAPI App
 app = FastAPI(
     title="SmartTerms API",
-    description="AI-powered Terms & Conditions analyzer with RAG",
+    description="AI-powered Terms & Conditions analyzer (Lightweight)",
     version="1.0.0"
 )
 
-# CORS Middleware - IMPORTANT for Android app access
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Allows all origins - restrict in production
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Global RAG instance
 rag_system: Optional[RAGSystem] = None
 
 
 @app.on_event("startup")
 async def startup_event():
-    """Initialize RAG system on startup"""
     global rag_system
 
     if not Config.GEMINI_API_KEY:
-        print("⚠️ WARNING: GEMINI_API_KEY not found in environment variables!")
-        print("Set it in Render dashboard: Settings > Environment > Add Environment Variable")
+        print("⚠️ WARNING: GEMINI_API_KEY not found!")
         raise ValueError("GEMINI_API_KEY environment variable is required!")
 
     rag_system = RAGSystem(Config.GEMINI_API_KEY)
@@ -506,15 +417,12 @@ async def startup_event():
 
 @app.on_event("shutdown")
 async def shutdown_event():
-    """Cleanup on shutdown"""
     if rag_system:
         rag_system.cleanup()
 
 
-# API Endpoints
 @app.get("/", response_model=HealthResponse)
 def root():
-    """Health check endpoint"""
     return {
         "status": "online",
         "message": "SmartTerms API is running. Visit /docs for API documentation."
@@ -523,7 +431,6 @@ def root():
 
 @app.get("/health", response_model=HealthResponse)
 def health_check():
-    """Detailed health check"""
     return {
         "status": "healthy",
         "message": f"RAG system: {'Ready' if rag_system else 'Not initialized'}"
@@ -532,9 +439,6 @@ def health_check():
 
 @app.post("/analyze", response_model=AnalyzeResponse)
 async def analyze_url(request: AnalyzeRequest):
-    """
-    Analyze a Terms & Conditions URL
-    """
     if not rag_system:
         raise HTTPException(status_code=503, detail="RAG system not initialized")
 
@@ -549,9 +453,6 @@ async def analyze_url(request: AnalyzeRequest):
 
 @app.post("/query", response_model=QueryResponse)
 async def query_document(request: QueryRequest):
-    """
-    Ask a question about the analyzed document
-    """
     if not rag_system:
         raise HTTPException(status_code=503, detail="RAG system not initialized")
 
@@ -564,7 +465,6 @@ async def query_document(request: QueryRequest):
         raise HTTPException(status_code=500, detail=f"Query failed: {str(e)}")
 
 
-# For Render deployment
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8000))
     uvicorn.run(
