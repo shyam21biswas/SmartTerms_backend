@@ -179,7 +179,7 @@ class GeminiLLM:
     def __init__(self, api_key: str):
         print("🤖 Initializing Gemini API...")
         genai.configure(api_key=api_key)
-        self.model = genai.GenerativeModel('gemini-2.0-flash-exp')
+        self.model = genai.GenerativeModel('gemini-2.5-flash')
         self.call_count = 0  # Track API calls
         print("✅ Gemini ready")
 
