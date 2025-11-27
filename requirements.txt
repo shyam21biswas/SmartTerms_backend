@@ -6,4 +6,3 @@ requests==2.31.0
 rank-bm25==0.2.2
 nltk==3.8.1
 lxml==4.9.3
-sentence-transformers==2.2.2
