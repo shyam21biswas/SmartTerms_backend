@@ -1,16 +1,13 @@
 """
-SmartTerms FastAPI - Optimized for Low Memory Deployment
-Memory optimized version for 512MB RAM environments
+SmartTerms FastAPI - Optimized for Render Deployment
 """
 
 import os
 import sys
-import time
 import warnings
 import gc
 from datetime import datetime
 from typing import List, Dict, Optional
-from urllib.parse import urljoin, urlparse
 
 import google.generativeai as genai
 import numpy as np
@@ -38,41 +35,42 @@ try:
     except LookupError:
         print("📦 Downloading NLTK data...")
         nltk.download('punkt', quiet=True)
+        nltk.download('punkt_tab', quiet=True)
     from nltk.tokenize import sent_tokenize
 except ImportError:
     print("⚠️ Installing rank_bm25 and nltk...")
     os.system(f'{sys.executable} -m pip install rank-bm25 nltk')
     from rank_bm25 import BM25Okapi
     import nltk
-
     nltk.download('punkt', quiet=True)
+    nltk.download('punkt_tab', quiet=True)
     from nltk.tokenize import sent_tokenize
 
 
 # ==============================================================================
-# CONFIGURATION - OPTIMIZED FOR LOW MEMORY
+# CONFIGURATION
 # ==============================================================================
 class Config:
-    # Get API key from environment variable (best practice)
-    GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "AIzaSyADyW2JrV62pxL2w-wj7M0oi6ps-7fflFY")
-
+    # IMPORTANT: Get API key from environment variable (Render secret)
+    GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
+    
     # MEMORY OPTIMIZATION: Use smaller embedding model
     EMBEDDING_MODEL = "all-MiniLM-L6-v2"  # 80MB instead of 420MB
 
     # Chunking settings
-    MIN_CHUNK_SENTENCES = 2  # Reduced
-    MAX_CHUNK_SENTENCES = 6  # Reduced
+    MIN_CHUNK_SENTENCES = 2
+    MAX_CHUNK_SENTENCES = 6
     SENTENCE_OVERLAP = 1
 
     # Search settings
     SEMANTIC_WEIGHT = 0.7
     BM25_WEIGHT = 0.3
-    TOP_K_RESULTS = 3  # Reduced from 5
+    TOP_K_RESULTS = 3
     RELEVANCE_THRESHOLD = 0.3
 
-    # Crawling limits - REDUCED FOR MEMORY
-    MAX_DEPTH = 0  # Only scrape main page
-    MAX_PAGES = 1  # Only one page
+    # Crawling limits
+    MAX_DEPTH = 0
+    MAX_PAGES = 1
 
     # Selenium DISABLED for memory savings
     USE_SELENIUM = False
@@ -80,7 +78,7 @@ class Config:
 
 
 # ==============================================================================
-# SIMPLE WEB SCRAPER (No Selenium)
+# SIMPLE WEB SCRAPER
 # ==============================================================================
 class SimpleWebScraper:
     """Lightweight scraper without Selenium"""
@@ -88,7 +86,7 @@ class SimpleWebScraper:
     def __init__(self):
         self.session = requests.Session()
         self.headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
             'Accept-Language': 'en-US,en;q=0.5',
         }
@@ -183,7 +181,7 @@ class HybridVectorStore:
         self.chunks = []
         self.embeddings = None
         self.bm25 = None
-        gc.collect()  # Clean up after loading model
+        gc.collect()
         print("✅ Model loaded")
 
     def add_chunks(self, chunks: List[Dict]):
@@ -206,7 +204,7 @@ class HybridVectorStore:
         tokenized = [text.lower().split() for text in texts]
         self.bm25 = BM25Okapi(tokenized)
 
-        gc.collect()  # Clean up
+        gc.collect()
         print(f"✅ Indexed {len(self.chunks)} total chunks")
 
     def search(self, query: str) -> List[Dict]:
@@ -293,21 +291,18 @@ Provide a clear, concise answer."""
 
     def classify_relevance(self, query: str, doc_title: str) -> bool:
         """Check if query is relevant"""
-        # Simple keyword-based check for speed
         common_terms = ['data', 'privacy', 'refund', 'cancel', 'payment', 'terms',
                         'policy', 'account', 'rights', 'liability', 'warranty']
         query_lower = query.lower()
 
-        # Check if query contains common T&C terms
         if any(term in query_lower for term in common_terms):
             return True
 
-        # Check for obviously off-topic queries
         off_topic = ['weather', 'sports', 'recipe', 'capital', 'who is']
         if any(term in query_lower for term in off_topic):
             return False
 
-        return True  # Default to relevant
+        return True
 
 
 # ==============================================================================
@@ -482,10 +477,10 @@ app = FastAPI(
     version="1.0.0"
 )
 
-# CORS Middleware
+# CORS Middleware - IMPORTANT for Android app access
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # For production, specify your Android app's domain
+    allow_origins=["*"],  # Allows all origins - restrict in production
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -500,11 +495,13 @@ async def startup_event():
     """Initialize RAG system on startup"""
     global rag_system
 
-    if not Config.GEMINI_API_KEY or Config.GEMINI_API_KEY == "YOUR_API_KEY":
-        raise ValueError("GEMINI_API_KEY not configured!")
+    if not Config.GEMINI_API_KEY:
+        print("⚠️ WARNING: GEMINI_API_KEY not found in environment variables!")
+        print("Set it in Render dashboard: Settings > Environment > Add Environment Variable")
+        raise ValueError("GEMINI_API_KEY environment variable is required!")
 
     rag_system = RAGSystem(Config.GEMINI_API_KEY)
-    gc.collect()  # Clean up after initialization
+    gc.collect()
 
 
 @app.on_event("shutdown")
@@ -537,10 +534,6 @@ def health_check():
 async def analyze_url(request: AnalyzeRequest):
     """
     Analyze a Terms & Conditions URL
-
-    - **url**: The URL to scrape and analyze
-
-    Returns document summary and metadata
     """
     if not rag_system:
         raise HTTPException(status_code=503, detail="RAG system not initialized")
@@ -558,10 +551,6 @@ async def analyze_url(request: AnalyzeRequest):
 async def query_document(request: QueryRequest):
     """
     Ask a question about the analyzed document
-
-    - **question**: Your question about the document
-
-    Returns AI-generated answer with sources
     """
     if not rag_system:
         raise HTTPException(status_code=503, detail="RAG system not initialized")
@@ -575,17 +564,12 @@ async def query_document(request: QueryRequest):
         raise HTTPException(status_code=500, detail=f"Query failed: {str(e)}")
 
 
-# Run server
+# For Render deployment
 if __name__ == "__main__":
-    print("\n" + "=" * 70)
-    print("🚀 Starting SmartTerms FastAPI Server")
-    print("=" * 70)
-    print("\n📝 API Documentation: http://127.0.0.1:8000/docs")
-    print("🔍 Health Check: http://127.0.0.1:8000/health\n")
-
+    port = int(os.environ.get("PORT", 8000))
     uvicorn.run(
         app,
         host="0.0.0.0",
-        port=8000,
-        reload=False  # Disable reload in production
+        port=port,
+        reload=False
     )

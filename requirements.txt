@@ -1,25 +1,13 @@
-# SmartTerms FastAPI - Memory Optimized Requirements
-
-# FastAPI Framework
-fastapi==0.109.0
-uvicorn[standard]==0.27.0
-pydantic==2.5.3
-
-# Core Dependencies
-requests==2.31.0
-beautifulsoup4==4.12.2
-lxml==4.9.3
-
-# AI/ML - MEMORY OPTIMIZED
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
 google-generativeai==0.3.2
 sentence-transformers==2.2.2
+beautifulsoup4==4.12.2
+requests==2.31.0
 numpy==1.24.3
-
-# Search
 rank-bm25==0.2.2
-
-# NLP
 nltk==3.8.1
-
-# Optional
-python-dotenv==1.0.0
+pydantic==2.5.0
+lxml==4.9.3
+torch==2.1.0
+transformers==4.35.2
