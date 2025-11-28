@@ -233,7 +233,7 @@ Keep it clear and actionable."""
         # Use more context from chunks
         context = "\n\n".join([f"Section {i+1}:\n{c['text']}" for i, c in enumerate(chunks)])
 
-        prompt = f"""You are analyzing a Terms & Conditions document. Answer the user's question based ONLY on the provided context.
+        prompt = f"""You are analyzing a Terms & Conditions document. Answer the user's question based ONLY on the provided context.Make clear points
 
 Context from document:
 {context[:4000]}
